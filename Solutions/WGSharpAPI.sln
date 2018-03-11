@@ -1,6 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2012
+# Visual Studio 15
+VisualStudioVersion = 15.0.27428.1
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WGSharpAPI", "..\Projects\WGSharpAPILibrary\WGSharpAPI.csproj", "{61032D9F-AB26-47F8-9E29-E4BE46C5B709}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Project", "Project", "{629A6E09-B321-40D7-B08B-B9A997F92C3C}"
@@ -29,5 +31,8 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{61032D9F-AB26-47F8-9E29-E4BE46C5B709} = {629A6E09-B321-40D7-B08B-B9A997F92C3C}
 		{8AEC8BC1-F8CB-470F-A489-761D69A41D33} = {5D8257C7-0A46-4CC2-9B30-DAAC4C0DCCA7}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {FFE239FB-EDCD-4114-BB00-1B6672F56701}
 	EndGlobalSection
 EndGlobal
