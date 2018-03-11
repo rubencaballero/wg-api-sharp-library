@@ -42,9 +42,10 @@ namespace WGSharpAPI
     /// </summary>
     public class WGApplication : IWGApplication
     {
-        private string _defaultApiURI = @"api.worldoftanks.eu/wot";
+        private string _defaultApiURI;
         private string _applicationId;
         private WGSettings _settings;
+        private WGGameType _gameType = WGGameType.Warships;
 
         #region Constructors
 
@@ -52,6 +53,13 @@ namespace WGSharpAPI
         {
             _applicationId = applicationId;
             _settings = new WGSettings();
+            _gameType = WGGameType.Warships;
+        }
+
+        public WGApplication(string applicationId, WGGameType gameType)
+           : this(applicationId)
+        {
+            _gameType = gameType;
         }
 
         public WGApplication(string applicationId, WGSettings settings)
@@ -60,16 +68,34 @@ namespace WGSharpAPI
             _settings = settings;
         }
 
-        public WGApplication(string applicationId, string apiURI)
-            : this(applicationId)
+        public WGApplication(string applicationId, WGSettings settings, WGGameType gameType)
+           : this(applicationId, gameType)
         {
-            _defaultApiURI = apiURI;
+            _settings = settings;
         }
 
-        public WGApplication(string applicationId, WGSettings settings, string apiURI)
-            : this(applicationId, settings)
-        {
-            _defaultApiURI = apiURI;
+        public WGGameType GameType {
+            get
+            {
+                return _gameType;
+            }
+            set
+            {
+                _gameType = value;
+                switch (value)
+                {
+                    case WGGameType.Warships:
+                        _defaultApiURI = @"api.worldofwarships.eu/wows";
+                        break;
+                    case WGGameType.Tanks:
+                        _defaultApiURI = @"api.worldoftanks.eu/wot";
+                        break;
+                    case WGGameType.Planes:
+                        break;
+                    default:
+                        break;
+                }
+            }
         }
 
         #endregion Constructors
@@ -596,9 +622,14 @@ namespace WGSharpAPI
 
         private string CreateClanSearchRequestURI(string searchTerm, WGLanguageField language, string responseFields, int limit, string orderby)
         {
-            var target = "clan/list";
+            var target = "clans/list";
 
             var generalUri = GetGeneralUri(target, language);
+
+            if (_gameType == WGGameType.Tanks )
+            {
+                generalUri = generalUri.Replace("/wot", "/wgn");
+            }
 
             var sb = new StringBuilder(generalUri);
 
@@ -648,6 +679,108 @@ namespace WGSharpAPI
         /// <param name="responseFields">fields to be returned. Null or string.Empty for all</param>
         /// <returns></returns>
         public IWGResponse<List<Clan>> GetClanDetails(long[] clanIds, WGLanguageField language, string accessToken, string responseFields)
+        {
+            switch (_gameType)
+            {
+                case WGGameType.Warships:
+                    return GetClanDetailsWarships(clanIds, WGLanguageField.EN, accessToken,responseFields);
+                default:
+                    return GetClanDetailsTanks(clanIds, WGLanguageField.EN, accessToken, responseFields);                 
+            }
+        }
+
+        /// <summary>
+        /// Method returns clan details.
+        /// </summary>
+        /// <param name="clanIds">list of clan ids</param>
+        /// <param name="language">language</param>
+        /// <param name="accessToken">access token</param>
+        /// <param name="responseFields">fields to be returned. Null or string.Empty for all</param>
+        /// <returns></returns>
+        public IWGResponse<List<Clan>> GetClanDetailsWarships(long[] clanIds, WGLanguageField language, string accessToken, string responseFields)
+        {
+            var requestURI = CreateClanInfoRequestURI(clanIds, language, accessToken, responseFields);
+
+            var output = GetRequestResponse(requestURI);
+
+            // this is our raw response which we will parse later on
+            var wgRawResponse = JsonConvert.DeserializeObject<WGRawResponse>(output);
+
+            // JObject accepts Language-INtegrated Queries over it, so it's our friend
+            var jObject = wgRawResponse.Data as JObject;
+
+            // copy the response details from the raw response to an actual response
+            var obj = new WGResponse<List<Clan>>()
+            {
+                Status = wgRawResponse.Status,
+                Meta = wgRawResponse.Meta,
+                Data = new List<Clan>(),
+            };
+
+            // were there any problems?
+            if (obj.Status != "ok")
+                return obj;
+
+            // everything went fine
+            // let's begin with some nasty parsing :(
+            foreach (var clanId in clanIds)
+            {
+                // I don't really like calling methods in the indexer - this should improve readability
+                var stringClanId = clanId.ToString();
+
+                // create our empty clan entity
+                var clan = new Clan();
+
+                // get the json string for the clan id
+                var clanJsonString = jObject[stringClanId];
+
+                // parse the json string and retrieve all the fields that we can
+                clan = clanJsonString.ToObject<Clan>();
+
+                #region parse members in clan
+
+                // get the list of members array
+                var listOfMembers = clanJsonString["members_ids"];
+
+                // any members? -> the answer is expected to be true, but we ask anyway
+                if (listOfMembers.HasValues)
+                {
+                    // get the children json strings for each member
+                    var listOfActualMembers = listOfMembers.Children();
+
+                    // go through our list
+                    foreach (var member in listOfActualMembers)
+                    {//                       
+                        // get the json string
+                        var objMember = GetClanMemberInfoWarships(Convert.ToInt64(member.ToString()));
+
+                        // were there any problems?
+                        if (objMember.Status != "ok" || objMember.Data.Count <= 0)
+                           break;
+
+                        // add each parsed member to our clan list
+                        clan.Members.Add(objMember.Data[0]);
+                    }
+                }
+
+                #endregion parse members in clan
+
+                // add the clan to the our actual response data
+                obj.Data.Add(clan);
+            }
+
+            return obj;
+        }
+
+        /// <summary>
+        /// Method returns clan details.
+        /// </summary>
+        /// <param name="clanIds">list of clan ids</param>
+        /// <param name="language">language</param>
+        /// <param name="accessToken">access token</param>
+        /// <param name="responseFields">fields to be returned. Null or string.Empty for all</param>
+        /// <returns></returns>
+        public IWGResponse<List<Clan>> GetClanDetailsTanks(long[] clanIds, WGLanguageField language, string accessToken, string responseFields)
         {
             var requestURI = CreateClanInfoRequestURI(clanIds, language, accessToken, responseFields);
 
@@ -702,7 +835,7 @@ namespace WGSharpAPI
                     foreach (var member in listOfActualMembers)
                     {
                         // get the json string
-                        var memberJsonString = member.First;
+                        var memberJsonString = member;
 
                         // parse the json string and get a Member entity
                         var parsedMember = memberJsonString.ToObject<Member>();
@@ -723,9 +856,14 @@ namespace WGSharpAPI
 
         private string CreateClanInfoRequestURI(long[] clanIds, WGLanguageField language, string accessToken, string responseFields)
         {
-            var target = "clan/info";
+            var target = "clans/info";
 
             var generalUri = GetGeneralUri(target, language);
+
+            if (_gameType == WGGameType.Tanks)
+            {
+                generalUri = generalUri.Replace("/wot", "/wgn");
+            }
 
             var sb = new StringBuilder(generalUri);
 
@@ -1170,6 +1308,101 @@ namespace WGSharpAPI
         }
 
         #endregion Clan Member Details
+
+
+        #region Clan Warships Member Details
+
+        /// <summary>
+        /// Method returns clan member info.
+        /// </summary>
+        /// <param name="clanId">member id</param>
+        /// <returns></returns>
+        public IWGResponse<List<Member>> GetClanMemberInfoWarships(long memberId)
+        {
+            return GetClanMemberInfoWarships(new long[] { memberId }, WGLanguageField.EN, null, null);
+        }
+
+        /// <summary>
+        /// Method returns clan member info.
+        /// </summary>
+        /// <param name="clanIds">list of clan member ids</param>
+        /// <returns></returns>
+        public IWGResponse<List<Member>> GetClanMemberInfoWarships(long[] memberIds)
+        {
+            return GetClanMemberInfoWarships(memberIds, WGLanguageField.EN, null, null);
+        }
+
+        /// <summary>
+        /// Method returns clan member info.
+        /// </summary>
+        /// <param name="clanIds">list of clan member ids</param>
+        /// <param name="language">language</param>
+        /// <param name="accessToken">access token</param>
+        /// <param name="responseFields">fields to be returned. Null or string.Empty for all</param>
+        /// <returns></returns>
+        public IWGResponse<List<Member>> GetClanMemberInfoWarships(long[] memberIds, WGLanguageField language, string accessToken, string responseFields)
+        {
+            var requestURI = CreateClanMemberInfoRequestURIWarships(memberIds, language, accessToken, responseFields);
+
+            var output = GetRequestResponse(requestURI);
+
+            var wgRawResponse = JsonConvert.DeserializeObject<WGRawResponse>(output);
+
+            var obj = new WGResponse<List<Member>>
+            {
+                Status = wgRawResponse.Status,
+                Meta = wgRawResponse.Meta,
+                Data = new List<Member>()
+            };
+
+            if (obj.Status != "ok")
+                return obj;
+
+            var jObject = wgRawResponse.Data as JObject;
+
+            foreach (var memberId in memberIds)
+            {
+                var memberIdString = memberId.ToString();
+
+                var member = jObject[memberIdString].ToObject<WarshipsMember>();
+
+                var convertedMember = new Member();
+                convertedMember.ClanId = member.ClanId;
+                convertedMember.ClanName = member.ClanName;
+                convertedMember.DateJoined = member.DateJoined;
+                convertedMember.Id = member.Id;
+                convertedMember.Role = member.Role;
+                convertedMember.Name = member.Name;
+                obj.Data.Add(convertedMember);
+            }
+
+            return obj;
+        }
+
+        private string CreateClanMemberInfoRequestURIWarships(long[] memberIds, WGLanguageField language, string accessToken, string responseFields)
+        {
+
+            var target = "clans/accountinfo";
+
+            var generalUri = GetGeneralUri(target, language);
+
+            var sb = new StringBuilder(generalUri);
+
+            if (!string.IsNullOrWhiteSpace(responseFields))
+                sb.AppendFormat("&fields={0}", responseFields);
+
+            if (!string.IsNullOrWhiteSpace(accessToken))
+                sb.AppendFormat("&access_token={0}", accessToken);
+
+            sb.AppendFormat("&account_id={0}", string.Join(",", memberIds));
+
+            var requestURI = sb.ToString();
+
+            return requestURI;
+        }
+
+        #endregion Clan Member Details
+
 
         #endregion Clans
 
